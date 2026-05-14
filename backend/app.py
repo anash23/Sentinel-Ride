@@ -12,6 +12,18 @@ import requests
 
 load_dotenv()
 
+# Debug: report whether EmailJS env vars are present (do not print secrets)
+try:
+    _svc_set = bool(os.getenv('EMAILJS_SERVICE_ID', ''))
+    _tmpl_set = bool(os.getenv('EMAILJS_TEMPLATE_ID', ''))
+    _pub_set = bool(os.getenv('EMAILJS_PUBLIC_KEY', os.getenv('EMAILJS_USER_ID', '')))
+    _to_set = bool(os.getenv('EMAILJS_TO_EMAIL', ''))
+    _tg_token_set = bool(os.getenv('TELEGRAM_BOT_TOKEN', ''))
+    _tg_chat_set = bool(os.getenv('TELEGRAM_CHAT_ID', ''))
+    print(f"[EMAIL CONFIG] service_id_set={_svc_set}, template_id_set={_tmpl_set}, public_key_set={_pub_set}, to_email_set={_to_set}, telegram_token_set={_tg_token_set}, telegram_chat_set={_tg_chat_set}")
+except Exception:
+    pass
+
 # Get the absolute paths
 BASE_DIR = Path(__file__).parent.parent
 FRONTEND_DIR = BASE_DIR / 'frontend'
@@ -44,6 +56,11 @@ EMAILJS_TEMPLATE_ID = os.getenv('EMAILJS_TEMPLATE_ID', '')
 EMAILJS_PUBLIC_KEY = os.getenv('EMAILJS_PUBLIC_KEY', os.getenv('EMAILJS_USER_ID', ''))
 EMAILJS_TO_EMAIL = os.getenv('EMAILJS_TO_EMAIL', 'avinashreddybanuri@gmail.com')
 EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send'
+
+# Telegram configuration
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+TELEGRAM_API_URL = 'https://api.telegram.org'
 
 
 def send_email_alert(alert_type, subject, message, extra_data=None):
@@ -86,6 +103,32 @@ def send_email_alert(alert_type, subject, message, extra_data=None):
         return True
     except Exception as exc:
         print(f'[EMAIL] Failed to send alert: {exc}')
+        return False
+
+
+def send_telegram_alert(text):
+    """Send a text alert via Telegram bot."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print('[TG] Skipping Telegram alert because TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set')
+        return False
+
+    url = f"{TELEGRAM_API_URL}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        'chat_id': TELEGRAM_CHAT_ID,
+        'text': text
+    }
+    try:
+        resp = requests.post(url, data=payload, timeout=8)
+        print(f"[TG] Telegram response: {resp.status_code}")
+        try:
+            print(f"[TG] Telegram body: {resp.text}")
+        except Exception:
+            pass
+        resp.raise_for_status()
+        print('[TG] Alert sent')
+        return True
+    except Exception as e:
+        print(f'[TG] Failed to send alert: {e}')
         return False
 
 
@@ -154,6 +197,14 @@ def receive_crash():
                 extra_data=data
             )
             print(f"[EMAIL] send_email_alert returned: {result}")
+
+            # Also send a Telegram alert (if configured)
+            try:
+                tg_text = f"CRASH ALERT — device={system_state['device_id']} armed={system_state['armed']} data={data}"
+            except Exception:
+                tg_text = 'CRASH ALERT — details unavailable'
+            tg_result = send_telegram_alert(tg_text)
+            print(f"[TG] send_telegram_alert returned: {tg_result}")
         
         return jsonify({'crash_received': True}), 200
     except Exception as e:
