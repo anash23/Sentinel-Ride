@@ -73,7 +73,14 @@ def send_email_alert(alert_type, subject, message, extra_data=None):
         payload['template_params']['details'] = json.dumps(extra_data)
 
     try:
+        print(f'[EMAIL] Sending alert (service={EMAILJS_SERVICE_ID}, template={EMAILJS_TEMPLATE_ID})')
         response = requests.post(EMAILJS_API_URL, json=payload, timeout=10)
+        print(f'[EMAIL] EmailJS response: {response.status_code}')
+        # Try to print response body for debugging (may contain service-specific info)
+        try:
+            print(f'[EMAIL] EmailJS body: {response.text}')
+        except Exception:
+            pass
         response.raise_for_status()
         print(f'[EMAIL] Alert sent: {alert_type}')
         return True
@@ -136,15 +143,17 @@ def receive_crash():
         data = request.get_json()
         system_state['crash_detected'] = True
         print(f"[CRASH] Crash detected! Data: {data}")
-        
+        print(f"[CRASH] Local armed state: {system_state.get('armed')} | Payload armed: {data.get('armed')}")
+
         if system_state['armed']:
             # Send the requested emergency message with coordinates
-            send_email_alert(
+            result = send_email_alert(
                 alert_type='crash',
                 subject='Sentinel Ride: Crash detected',
                 message='Alert!!!! the rider might have crashed at 17.5384240°N 78.3850000°E please respond!!!!!',
                 extra_data=data
             )
+            print(f"[EMAIL] send_email_alert returned: {result}")
         
         return jsonify({'crash_received': True}), 200
     except Exception as e:
