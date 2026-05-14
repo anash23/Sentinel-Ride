@@ -10,7 +10,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 import requests
 
-load_dotenv()
+# Load .env from backend folder or root
+env_path = Path(__file__).parent / '.env'  # backend/.env
+if not env_path.exists():
+    env_path = Path(__file__).parent.parent / '.env'  # root/.env
+load_dotenv(env_path)
 
 # Debug: report whether EmailJS env vars are present (do not print secrets)
 try:
@@ -93,11 +97,12 @@ def send_email_alert(alert_type, subject, message, extra_data=None):
         print(f'[EMAIL] Sending alert (service={EMAILJS_SERVICE_ID}, template={EMAILJS_TEMPLATE_ID})')
         response = requests.post(EMAILJS_API_URL, json=payload, timeout=10)
         print(f'[EMAIL] EmailJS response: {response.status_code}')
-        # Try to print response body for debugging (may contain service-specific info)
+        # Always print response body for debugging
         try:
             print(f'[EMAIL] EmailJS body: {response.text}')
         except Exception:
             pass
+        # Now check for errors
         response.raise_for_status()
         print(f'[EMAIL] Alert sent: {alert_type}')
         return True
