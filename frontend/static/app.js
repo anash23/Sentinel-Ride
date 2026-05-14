@@ -3,7 +3,8 @@
  * Real-time monitoring and control for smart helmet safety system
  */
 
-const API_BASE = 'http://localhost:5001/api';
+// Use same-origin API so dashboard works from any host/IP.
+const API_BASE = '/api';
 
 // Application State
 const appState = {
@@ -37,6 +38,9 @@ function initDashboard() {
 async function pollSystemStatus() {
     try {
         const response = await fetch(`${API_BASE}/status`);
+        if (!response.ok) {
+            throw new Error(`Status poll failed with ${response.status}`);
+        }
         const data = await response.json();
         
         appState.armed = data.armed;
