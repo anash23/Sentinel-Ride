@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel Ride — Smart Helmet Safety Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ Sentinel Ride</h1>
+            <p class="subtitle">Smart Helmet Safety System</p>
+        </header>
+
+        <main>
+            <!-- Control Panel -->
+            <section class="control-panel">
+                <h2>Control</h2>
+                <div class="button-group">
+                    <button id="armBtn" class="btn btn-primary">ARM</button>
+                    <button id="disarmBtn" class="btn btn-secondary">DISARM</button>
+                </div>
+            </section>
+
+            <!-- Status Display -->
+            <section class="status-grid">
+                <div class="status-card" id="systemStatus">
+                    <h3>System Status</h3>
+                    <p class="status-value">DISARMED</p>
+                </div>
+
+                <div class="status-card" id="deviceStatus">
+                    <h3>Device Status</h3>
+                    <p class="status-value offline">OFFLINE</p>
+                </div>
+
+                <div class="status-card" id="crashStatus">
+                    <h3>Crash Status</h3>
+                    <p class="status-value normal">NO CRASH</p>
+                </div>
+
+                <div class="status-card" id="drowsinessStatus">
+                    <h3>Drowsiness Status</h3>
+                    <p class="status-value normal">ALERT</p>
+                </div>
+            </section>
+
+            <!-- Heartbeat Monitor -->
+            <section class="heartbeat-section">
+                <h2>Heartbeat Monitor</h2>
+                <p id="lastHeartbeat">Last update: Never</p>
+            </section>
+
+            <!-- Activity Log -->
+            <section class="log-section">
+                <h2>Activity Log</h2>
+                <div id="activityLog" class="log-container">
+                    <p class="log-entry">[INIT] Dashboard loaded</p>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Sentinel Ride v1.0 — Smart Helmet Safety System</p>
+        </footer>
+    </div>
+
+    <!-- EmailJS SDK (for emergency alerts) -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+/.env
+.env.*
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+build/
+dist/
+
+# macOS
+.DS_Store
+
+# VS Code
+/.vscode
+
+# Arduino/ESP32
+*.bin
+*.elf
+build-
+
+# Logs
+*.log
+
+# OS generated files
+Thumbs.db
