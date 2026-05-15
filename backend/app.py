@@ -22,9 +22,7 @@ try:
     _tmpl_set = bool(os.getenv('EMAILJS_TEMPLATE_ID', ''))
     _pub_set = bool(os.getenv('EMAILJS_PUBLIC_KEY', os.getenv('EMAILJS_USER_ID', '')))
     _to_set = bool(os.getenv('EMAILJS_TO_EMAIL', ''))
-    _tg_token_set = bool(os.getenv('TELEGRAM_BOT_TOKEN', ''))
-    _tg_chat_set = bool(os.getenv('TELEGRAM_CHAT_ID', ''))
-    print(f"[EMAIL CONFIG] service_id_set={_svc_set}, template_id_set={_tmpl_set}, public_key_set={_pub_set}, to_email_set={_to_set}, telegram_token_set={_tg_token_set}, telegram_chat_set={_tg_chat_set}")
+    print(f"[EMAIL CONFIG] service_id_set={_svc_set}, template_id_set={_tmpl_set}, public_key_set={_pub_set}, to_email_set={_to_set}")
 except Exception:
     pass
 
@@ -60,11 +58,49 @@ EMAILJS_TEMPLATE_ID = os.getenv('EMAILJS_TEMPLATE_ID', '')
 EMAILJS_PUBLIC_KEY = os.getenv('EMAILJS_PUBLIC_KEY', os.getenv('EMAILJS_USER_ID', ''))
 EMAILJS_TO_EMAIL = os.getenv('EMAILJS_TO_EMAIL', 'avinashreddybanuri@gmail.com')
 EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send'
+EMAILJS_PRIVATE_KEY = os.getenv('EMAILJS_PRIVATE_KEY', '')
 
-# Telegram configuration
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
-TELEGRAM_API_URL = 'https://api.telegram.org'
+
+def refresh_connectivity_state(send_offline_email=True):
+    """Refresh ESP32 online/offline state from heartbeat timeout."""
+    if system_state['last_heartbeat'] is None:
+        system_state['esp32_online'] = False
+        return {
+            'offline': True,
+            'reason': 'no_heartbeat',
+            'seconds_since_heartbeat': None,
+            'threshold': HEARTBEAT_TIMEOUT,
+        }
+
+    last_beat = datetime.fromisoformat(system_state['last_heartbeat'])
+    time_since = (datetime.now() - last_beat).total_seconds()
+    is_offline = time_since > HEARTBEAT_TIMEOUT
+    system_state['esp32_online'] = not is_offline
+
+    should_alert = (
+        is_offline
+        and system_state['armed']
+        and not system_state['offline_alert_sent']
+        and send_offline_email
+    )
+    if should_alert:
+        system_state['offline_alert_sent'] = True
+        send_email_alert(
+            alert_type='offline',
+            subject='Sentinel Ride: Device offline',
+            message='No heartbeat received from the ESP32 helmet safety system. The device may be offline or the rider may have crashed.',
+            extra_data={
+                'seconds_since_heartbeat': time_since,
+                'threshold': HEARTBEAT_TIMEOUT
+            }
+        )
+
+    return {
+        'offline': is_offline,
+        'seconds_since_heartbeat': time_since,
+        'threshold': HEARTBEAT_TIMEOUT,
+    }
+
 
 
 def send_email_alert(alert_type, subject, message, extra_data=None):
@@ -77,15 +113,15 @@ def send_email_alert(alert_type, subject, message, extra_data=None):
         'service_id': EMAILJS_SERVICE_ID,
         'template_id': EMAILJS_TEMPLATE_ID,
         'user_id': EMAILJS_PUBLIC_KEY,
-        'template_params': {
-            'alert_type': alert_type,
-            'subject': subject,
-            'message': message,
+        'template_params': {  # match your EmailJS template variables
+            'title': subject,
+            'name': 'Sentinel Ride',
+            'time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'message': f"{message}\n\nDetails: {json.dumps(extra_data)}",
+            'email': EMAILJS_TO_EMAIL,
+            'to_email': EMAILJS_TO_EMAIL,
             'device_id': system_state['device_id'],
             'armed': str(system_state['armed']),
-            'esp32_online': str(system_state['esp32_online']),
-            'last_heartbeat': str(system_state['last_heartbeat']),
-            'to_email': EMAILJS_TO_EMAIL,
             'timestamp': datetime.now().isoformat()
         }
     }
@@ -95,7 +131,14 @@ def send_email_alert(alert_type, subject, message, extra_data=None):
 
     try:
         print(f'[EMAIL] Sending alert (service={EMAILJS_SERVICE_ID}, template={EMAILJS_TEMPLATE_ID})')
-        response = requests.post(EMAILJS_API_URL, json=payload, timeout=10)
+        # If a private key is provided (EmailJS strict mode), include it in headers and payload
+        headers = {}
+        if EMAILJS_PRIVATE_KEY:
+            headers['X-Private-Key'] = EMAILJS_PRIVATE_KEY
+            # include in payload for compatibility
+            payload['private_key'] = EMAILJS_PRIVATE_KEY
+            payload['accessToken'] = EMAILJS_PRIVATE_KEY
+        response = requests.post(EMAILJS_API_URL, json=payload, headers=headers or None, timeout=10)
         print(f'[EMAIL] EmailJS response: {response.status_code}')
         # Always print response body for debugging
         try:
@@ -111,32 +154,6 @@ def send_email_alert(alert_type, subject, message, extra_data=None):
         return False
 
 
-def send_telegram_alert(text):
-    """Send a text alert via Telegram bot."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print('[TG] Skipping Telegram alert because TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set')
-        return False
-
-    url = f"{TELEGRAM_API_URL}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': text
-    }
-    try:
-        resp = requests.post(url, data=payload, timeout=8)
-        print(f"[TG] Telegram response: {resp.status_code}")
-        try:
-            print(f"[TG] Telegram body: {resp.text}")
-        except Exception:
-            pass
-        resp.raise_for_status()
-        print('[TG] Alert sent')
-        return True
-    except Exception as e:
-        print(f'[TG] Failed to send alert: {e}')
-        return False
-
-
 @app.route('/')
 def dashboard():
     """Serve the web dashboard."""
@@ -146,6 +163,7 @@ def dashboard():
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """Get current system status."""
+    refresh_connectivity_state(send_offline_email=True)
     return jsonify(system_state)
 
 
@@ -203,13 +221,7 @@ def receive_crash():
             )
             print(f"[EMAIL] send_email_alert returned: {result}")
 
-            # Also send a Telegram alert (if configured)
-            try:
-                tg_text = f"CRASH ALERT — device={system_state['device_id']} armed={system_state['armed']} data={data}"
-            except Exception:
-                tg_text = 'CRASH ALERT — details unavailable'
-            tg_result = send_telegram_alert(tg_text)
-            print(f"[TG] send_telegram_alert returned: {tg_result}")
+            # (No Telegram fallback) finished handling crash alert
         
         return jsonify({'crash_received': True}), 200
     except Exception as e:
@@ -233,31 +245,8 @@ def receive_drowsiness():
 @app.route('/api/offline-check', methods=['GET'])
 def check_offline():
     """Check if device has gone offline (no heartbeat for HEARTBEAT_TIMEOUT)."""
-    if system_state['last_heartbeat'] is None:
-        return jsonify({'offline': True, 'reason': 'no_heartbeat'})
-    
-    last_beat = datetime.fromisoformat(system_state['last_heartbeat'])
-    time_since = (datetime.now() - last_beat).total_seconds()
-    
-    is_offline = time_since > HEARTBEAT_TIMEOUT and system_state['armed']
-
-    if is_offline and not system_state['offline_alert_sent']:
-        system_state['offline_alert_sent'] = True
-        send_email_alert(
-            alert_type='offline',
-            subject='Sentinel Ride: Device offline',
-            message='No heartbeat received from the ESP32 helmet safety system. The device may be offline or the rider may have crashed.',
-            extra_data={
-                'seconds_since_heartbeat': time_since,
-                'threshold': HEARTBEAT_TIMEOUT
-            }
-        )
-    
-    return jsonify({
-        'offline': is_offline,
-        'seconds_since_heartbeat': time_since,
-        'threshold': HEARTBEAT_TIMEOUT
-    })
+    state = refresh_connectivity_state(send_offline_email=True)
+    return jsonify(state)
 
 
 @app.errorhandler(404)
